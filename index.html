@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Building Vibration Mode Analyzer</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+--bg:#f4f7fb;--card:#fff;--text:#1f2937;--muted:#64748b;--accent:#1266f1;--soft:#eef5ff;--border:#cbd5e1;--floor:#dbeafe;--line:#334155}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0f172a;--card:#1e293b;--text:#e2e8f0;--muted:#94a3b8;--accent:#60a5fa;--soft:#172554;--border:#475569;--floor:#1e3a8a;--line:#94a3b8}}
+:root[data-theme="dark"]{--bg:#0f172a;--card:#1e293b;--text:#e2e8f0;--muted:#94a3b8;--accent:#60a5fa;--soft:#172554;--border:#475569;--floor:#1e3a8a;--line:#94a3b8}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box;margin:0;padding:0;font-family:Arial,sans-serif}
+body{background:var(--bg);color:var(--text)}
+header{background:#1266f1;color:#fff;padding:22px 14px;text-align:center}
+header h1{font-size:22px;margin-bottom:6px}header p{font-size:14px;opacity:.9}
+.container{max-width:1000px;margin:0 auto;padding:14px}
+.card{background:var(--card);border-radius:12px;padding:18px;margin-bottom:16px;box-shadow:0 2px 10px rgba(0,0,0,.1)}
+.card h2{color:var(--accent);margin-bottom:12px;font-size:19px}
+.formula{background:var(--soft);padding:12px;border-radius:8px;text-align:center;font-size:18px;margin-top:10px}
+.mt{margin:12px 0 6px;font-weight:bold;font-size:14px}
+.matrix{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;max-width:420px}
+input{width:100%;padding:9px;border:1px solid var(--border);border-radius:7px;font-size:15px;background:var(--card);color:var(--text)}
+.btn{margin-top:16px;width:100%;padding:13px;border:none;border-radius:8px;background:#1266f1;color:#fff;font-size:16px;font-weight:bold;cursor:pointer}
+.btn.sec{background:var(--soft);color:var(--accent);margin-top:8px}
+.err{color:#dc2626;margin-top:10px;font-size:14px;min-height:18px}
+.results{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.rb{background:var(--soft);padding:14px;border-radius:10px;text-align:center;cursor:pointer;border:2px solid transparent}
+.rb.on{border-color:var(--accent)}
+.rb h3{color:var(--accent);margin-bottom:6px;font-size:16px}
+.fr{font-size:20px;font-weight:bold}.sm{font-size:13px;color:var(--muted);margin-top:4px;word-break:break-word}
+.wrap{overflow-x:auto}
+svg{width:100%;max-width:420px;display:block;margin:0 auto;height:auto}
+.ctl{display:flex;gap:10px;justify-content:center;margin-top:10px;align-items:center;font-size:14px}
+.ctl input{width:140px;padding:0}
+footer{text-align:center;padding:16px;color:var(--muted);font-size:13px}
+@media(max-width:640px){.results{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header><h1>Building Vibration Mode Analyzer</h1><p>3-Floor Building | Eigenvalues &amp; Eigenvectors</p></header>
+<div class="container">
+
+<div class="card"><h2>Project Description</h2>
+<p>3-floor building ki mass and stiffness matrices nundi natural frequencies (ω) and mode shapes calculate chestundi.</p>
+<div class="formula"><b>K v = ω² M v</b></div></div>
+
+<div class="card"><h2>Building Parameters</h2>
+<div class="mt">Mass Matrix (M)</div><div class="matrix" id="mM"></div>
+<div class="mt">Stiffness Matrix (K)</div><div class="matrix" id="mK"></div>
+<button class="btn" onclick="calculate()">Calculate Vibration Modes</button>
+<button class="btn sec" onclick="resetVals()">Reset to Example</button>
+<div class="err" id="err"></div></div>
+
+<div class="card"><h2>Analysis Results</h2>
+<div class="results" id="res"></div>
+<p class="sm" style="text-align:center;margin-top:10px">Mode box tap chesi animation lo chudandi</p></div>
+
+<div class="card"><h2>3-Floor Building Model</h2>
+<div class="wrap"><svg id="bld" viewBox="0 0 400 300"></svg></div>
+<div class="ctl"><label for="amp">Amplitude</label><input id="amp" type="range" min="5" max="60" value="30"></div>
+<div class="sm" id="cap" style="text-align:center;margin-top:8px"></div></div>
+
+</div>
+<footer>Building Vibration Mode Analyzer | B.Tech Mathematics Mini Project</footer>
+
+<script>
+const defM=[2,0,0,0,2,0,0,0,2], defK=[30,-10,0,-10,20,-10,0,-10,10];
+let modes=[], sel=0;
+
+function buildInputs(id,prefix,vals){
+  const el=document.getElementById(id);el.innerHTML='';
+  vals.forEach((v,i)=>{const inp=document.createElement('input');inp.type='number';inp.step='any';inp.id=prefix+i;inp.value=v;el.appendChild(inp);});
+}
+function readMat(prefix){
+  const a=[];for(let i=0;i<9;i++){const v=parseFloat(document.getElementById(prefix+i).value);if(isNaN(v))throw new Error('Anni matrix values numbers ga undali.');a.push(v);}
+  const m=[[a[0],a[1],a[2]],[a[3],a[4],a[5]],[a[6],a[7],a[8]]];
+  for(let i=0;i<3;i++)for(let j=i+1;j<3;j++){const s=(m[i][j]+m[j][i])/2;m[i][j]=m[j][i]=s;} // symmetrize
+  return m;
+}
+function cholesky(M){
+  const L=[[0,0,0],[0,0,0],[0,0,0]];
+  for(let i=0;i<3;i++)for(let j=0;j<=i;j++){
+    let s=M[i][j];for(let k=0;k<j;k++)s-=L[i][k]*L[j][k];
+    if(i===j){if(s<=1e-12)throw new Error('Mass matrix positive definite kaadu.');L[i][i]=Math.sqrt(s);}
+    else L[i][j]=s/L[j][j];
+  }
+  return L;
+}
+function invLower(L){
+  const X=[[0,0,0],[0,0,0],[0,0,0]];
+  for(let c=0;c<3;c++)for(let i=0;i<3;i++){
+    let s=(i===c)?1:0;for(let k=0;k<i;k++)s-=L[i][k]*X[k][c];X[i][c]=s/L[i][i];
+  }
+  return X;
+}
+const mul=(A,B)=>A.map((r,i)=>B[0].map((_,j)=>r.reduce((s,_,k)=>s+A[i][k]*B[k][j],0)));
+const tr=A=>A[0].map((_,j)=>A.map(r=>r[j]));
+
+function jacobi(A){
+  const n=3;A=A.map(r=>r.slice());let V=[[1,0,0],[0,1,0],[0,0,1]];
+  for(let it=0;it<100;it++){
+    let p=0,q=1,mx=0;
+    for(let i=0;i<n;i++)for(let j=i+1;j<n;j++)if(Math.abs(A[i][j])>mx){mx=Math.abs(A[i][j]);p=i;q=j;}
+    if(mx<1e-12)break;
+    const th=(A[q][q]-A[p][p])/(2*A[p][q]);
+    const t=Math.sign(th||1)/(Math.abs(th)+Math.sqrt(th*th+1));
+    const c=1/Math.sqrt(t*t+1),s=t*c;
+    for(let k=0;k<n;k++){const akp=A[k][p],akq=A[k][q];A[k][p]=c*akp-s*akq;A[k][q]=s*akp+c*akq;}
+    for(let k=0;k<n;k++){const apk=A[p][k],aqk=A[q][k];A[p][k]=c*apk-s*aqk;A[q][k]=s*apk+c*aqk;}
+    for(let k=0;k<n;k++){const vkp=V[k][p],vkq=V[k][q];V[k][p]=c*vkp-s*vkq;V[k][q]=s*vkp+c*vkq;}
+  }
+  return {vals:[A[0][0],A[1][1],A[2][2]],vecs:V};
+}
+
+function calculate(){
+  const err=document.getElementById('err');err.textContent='';
+  try{
+    const M=readMat('m'),K=readMat('k');
+    const L=cholesky(M),Li=invLower(L);
+    const A=mul(mul(Li,K),tr(Li));
+    const {vals,vecs}=jacobi(A);
+    const LiT=tr(Li);
+    modes=vals.map((val,idx)=>{
+      if(val<=1e-12)throw new Error('K matrix positive definite kaadu (negative/zero eigenvalue vachindi).');
+      const y=[0,1,2].map(r=>vecs[r][idx]);
+      let v=LiT.map(row=>row.reduce((s,x,k)=>s+x*y[k],0));
+      let ref=Math.abs(v[2])>1e-9?v[2]:v.reduce((a,b)=>Math.abs(b)>Math.abs(a)?b:a);
+      v=v.map(x=>x/ref);
+      return {lam:val,w:Math.sqrt(val),v};
+    }).sort((a,b)=>a.lam-b.lam);
+    sel=0;render();
+  }catch(e){err.textContent='⚠ '+e.message;}
+}
+function render(){
+  const r=document.getElementById('res');r.innerHTML='';
+  modes.forEach((m,i)=>{
+    const d=document.createElement('div');d.className='rb'+(i===sel?' on':'');
+    d.onclick=()=>{sel=i;render();};
+    d.innerHTML=`<h3>Mode ${i+1}</h3><div class="fr">${m.w.toFixed(3)} rad/s</div>
+    <div class="sm">λ = ω² = ${m.lam.toFixed(3)}</div>
+    <div class="sm">f = ${(m.w/2/Math.PI).toFixed(3)} Hz | T = ${(2*Math.PI/m.w).toFixed(3)} s</div>
+    <div class="sm">Shape (F1,F2,F3): [${m.v.map(x=>x.toFixed(2)).join(', ')}]</div>`;
+    r.appendChild(d);
+  });
+  document.getElementById('cap').textContent=`Showing Mode ${sel+1} (animation speed relative frequency ki scaled)`;
+}
+
+/* Building animation */
+const svg=document.getElementById('bld'),NS='http://www.w3.org/2000/svg';
+const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n);
+const floors=[],cols=[];
+function mk(t,a){const e=document.createElementNS(NS,t);for(const k in a)e.setAttribute(k,a[k]);svg.appendChild(e);return e;}
+mk('rect',{x:60,y:270,width:280,height:12,fill:'#64748b'});
+for(let i=0;i<3;i++){cols.push([mk('line',{'stroke-width':4,'stroke-linecap':'round'}),mk('line',{'stroke-width':4,'stroke-linecap':'round'})]);}
+for(let i=0;i<3;i++){
+  const r=mk('rect',{width:160,height:30,rx:3,'stroke-width':3});
+  const t=mk('text',{'text-anchor':'middle','font-size':14,'font-weight':'bold'});t.textContent='Floor '+(i+1);
+  floors.push({r,t});
+}
+function frame(ts){
+  const amp=+document.getElementById('amp').value;
+  const fill=css('--floor').trim()||'#dbeafe',ln=css('--line').trim()||'#334155',tx=css('--text').trim()||'#000';
+  const m=modes[sel];
+  const speed=m?1.5*(m.w/modes[0].w):0;
+  const s=m?Math.sin(ts/1000*speed):0;
+  let prev=[0,0,270];
+  for(let i=0;i<3;i++){
+    const norm=m?Math.max(...m.v.map(Math.abs))||1:1;
+    const dx=m?(m.v[i]/norm)*amp*s:0;
+    const y=270-(i+1)*70, x=120+dx;
+    floors[i].r.setAttribute('x',x);floors[i].r.setAttribute('y',y);
+    floors[i].r.setAttribute('fill',fill);floors[i].r.setAttribute('stroke',ln);
+    floors[i].t.setAttribute('x',x+80);floors[i].t.setAttribute('y',y+20);floors[i].t.setAttribute('fill',tx);
+    const px=i===0?120:prev[0],py=i===0?270:prev[1]+30;
+    const [a,b]=cols[i];
+    a.setAttribute('x1',i===0?120:px);a.setAttribute('y1',py);a.setAttribute('x2',x);a.setAttribute('y2',y+30);a.setAttribute('stroke',ln);
+    b.setAttribute('x1',i===0?280:px+160);b.setAttribute('y1',py);b.setAttribute('x2',x+160);b.setAttribute('y2',y+30);b.setAttribute('stroke',ln);
+    prev=[x,y];
+  }
+  requestAnimationFrame(frame);
+}
+function resetVals(){buildInputs('mM','m',defM);buildInputs('mK','k',defK);calculate();}
+resetVals();requestAnimationFrame(frame);
+</script>
+</body>
+</html>
